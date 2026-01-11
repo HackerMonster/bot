@@ -18,11 +18,14 @@ CHANNELS = [
     {"name": "Chat BaseGriefer", "url": "https://t.me/chatbasegriefer", "username": "chatbasegriefer"}
 ]
 
+# Разрешенные пользователи для команды /addfile
+ALLOWED_USERS = [
+    5870949629,  # ID пользователя
+    "Feop06"     # Username пользователя
+]
+
 # ID чатов и каналов, где бот НЕ ДОЛЖЕН работать
 BLACKLIST_CHAT_IDS = [-1002197945807, -1001621247413]
-
-# ID канала для загрузки файлов (ССЫЛКА НА КАНАЛ ВАША: https://t.me/+PI0G1whs_AJjNzdi)
-FILE_STORAGE_CHAT_ID = -1003285242946  # Убедитесь, что это правильный ID канала!
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -31,11 +34,31 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Хранилище файлов (в памяти, можно заменить на БД)
+# Хранилище файлов (в памяти)
 file_storage = {}
 
-class SubscriptionStates(StatesGroup):
+class FileUploadStates(StatesGroup):
+    waiting_for_file = State()
     waiting_for_subscription = State()
+
+# Проверка доступа пользователя к команде /addfile
+def is_user_allowed(user_id: int, username: str = None) -> bool:
+    """
+    Проверяет, имеет ли пользователь доступ к команде /addfile
+    """
+    # Проверка по ID
+    if user_id in ALLOWED_USERS:
+        return True
+    
+    # Проверка по username
+    if username and username in ALLOWED_USERS:
+        return True
+    
+    # Проверяем если username есть в ALLOWED_USERS как строка
+    if username and username.lower() in [str(u).lower() for u in ALLOWED_USERS if isinstance(u, str)]:
+        return True
+    
+    return False
 
 # Функция для проверки находится ли чат в черном списке
 async def is_chat_blacklisted(chat_id: int) -> bool:
@@ -142,40 +165,17 @@ async def delete_all_subscription_messages(chat_id: int):
         logging.error(f"Ошибка при удалении сообщений о подписке: {e}")
 
 # Функция для сохранения информации о файле
-def save_file_info(message: Message, file_type: str):
+def save_file_info(file_data: dict, file_type: str):
     unique_code = str(uuid.uuid4())[:12]
     
-    # Сохраняем основную информацию о сообщении
-    file_data = {
-        'message_id': message.message_id,
-        'chat_id': message.chat.id,
+    # Сохраняем основную информацию о файле
+    file_storage[unique_code] = {
         'file_type': file_type,
-        'caption': message.caption or "",
+        'file_data': file_data,
         'created_at': datetime.now(),
         'uses': 0
     }
     
-    # Сохраняем file_id в зависимости от типа файла
-    if file_type == "document":
-        file_data['file_id'] = message.document.file_id
-        file_data['file_name'] = message.document.file_name
-    elif file_type == "photo":
-        file_data['file_id'] = message.photo[-1].file_id
-    elif file_type == "video":
-        file_data['file_id'] = message.video.file_id
-    elif file_type == "audio":
-        file_data['file_id'] = message.audio.file_id
-        file_data['file_name'] = message.audio.file_name or "Аудио файл"
-    elif file_type == "voice":
-        file_data['file_id'] = message.voice.file_id
-    elif file_type == "video_note":
-        file_data['file_id'] = message.video_note.file_id
-    elif file_type == "animation":
-        file_data['file_id'] = message.animation.file_id
-    elif file_type == "sticker":
-        file_data['file_id'] = message.sticker.file_id
-    
-    file_storage[unique_code] = file_data
     logging.info(f"Файл сохранен с кодом: {unique_code}, тип: {file_type}")
     return unique_code
 
@@ -186,35 +186,87 @@ def get_file_by_code(code):
         return file_storage[code]
     return None
 
-# Обработчик загрузки ЛЮБЫХ файлов в канале -1003285242946
-@dp.message(lambda message: message.chat.id == FILE_STORAGE_CHAT_ID)
-async def handle_file_upload(message: Message):
-    file_type = None
+# НОВАЯ КОМАНДА: /addfile - только для разрешенных пользователей
+@dp.message(Command("addfile"))
+async def cmd_addfile(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    username = message.from_user.username
     
-    # Определяем тип контента
+    logging.info(f"Команда /addfile от пользователя {user_id} (@{username})")
+    
+    # Проверяем доступ пользователя
+    if not is_user_allowed(user_id, username):
+        logging.info(f"Пользователь {user_id} (@{username}) не имеет доступа к команде /addfile")
+        # Для остальных пользователей команда ничего не делает (не отвечает)
+        return
+    
+    # У пользователя есть доступ
+    logging.info(f"Пользователь {user_id} (@{username}) имеет доступ к команде /addfile")
+    
+    await message.answer("📤 Отправьте файл, который хотите добавить в базу.")
+    await state.set_state(FileUploadStates.waiting_for_file)
+
+# Обработчик получения файла после команды /addfile
+@dp.message(FileUploadStates.waiting_for_file)
+async def handle_file_upload(message: Message, state: FSMContext):
+    file_type = None
+    file_data = {}
+    
+    # Определяем тип контента и собираем данные
     if message.document:
         file_type = "document"
+        file_data = {
+            'file_id': message.document.file_id,
+            'file_name': message.document.file_name,
+            'caption': message.caption or ""
+        }
     elif message.photo:
         file_type = "photo"
+        file_data = {
+            'file_id': message.photo[-1].file_id,
+            'caption': message.caption or ""
+        }
     elif message.video:
         file_type = "video"
+        file_data = {
+            'file_id': message.video.file_id,
+            'caption': message.caption or ""
+        }
     elif message.audio:
         file_type = "audio"
+        file_data = {
+            'file_id': message.audio.file_id,
+            'file_name': message.audio.file_name or "Аудио файл",
+            'caption': message.caption or ""
+        }
     elif message.voice:
         file_type = "voice"
+        file_data = {
+            'file_id': message.voice.file_id
+        }
     elif message.video_note:
         file_type = "video_note"
+        file_data = {
+            'file_id': message.video_note.file_id
+        }
     elif message.animation:
         file_type = "animation"
+        file_data = {
+            'file_id': message.animation.file_id,
+            'caption': message.caption or ""
+        }
     elif message.sticker:
         file_type = "sticker"
+        file_data = {
+            'file_id': message.sticker.file_id
+        }
     
     # Если это файл (любой тип)
     if file_type:
-        logging.info(f"Получен файл типа {file_type} в канале {message.chat.id}")
+        logging.info(f"Получен файл типа {file_type} от пользователя {message.from_user.id}")
         
-        # Создаем уникальный код
-        unique_code = save_file_info(message, file_type)
+        # Сохраняем файл и получаем уникальный код
+        unique_code = save_file_info(file_data, file_type)
         
         # Создаем ссылку
         bot_username = (await bot.get_me()).username
@@ -238,31 +290,24 @@ async def handle_file_upload(message: Message):
             ]
         )
         
-        # Отправляем сообщение с кнопкой
-        try:
-            await message.reply(
-                f"📁 Файл сохранен!\n\n"
-                f"🔗 Ссылка для получения: `{link}`\n\n"
-                f"ℹ️ Нажмите кнопку ниже, чтобы перейти к боту",
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            logging.info(f"Отправлено сообщение с кнопкой для файла {unique_code}")
-        except Exception as e:
-            logging.error(f"Ошибка при отправке сообщения: {e}")
-            # Пробуем отправить без reply
-            try:
-                await bot.send_message(
-                    chat_id=message.chat.id,
-                    text=f"📁 Файл сохранен!\n\n🔗 Ссылка: `{link}`",
-                    reply_markup=keyboard,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except Exception as e2:
-                logging.error(f"Не удалось отправить сообщение: {e2}")
+        # Отправляем сообщение с результатом
+        await message.answer(
+            f"✅ Файл успешно добавлен в базу!\n\n"
+            f"🔗 Ссылка для получения: `{link}`\n\n"
+            f"📊 Статистика:\n"
+            f"• Тип файла: {file_type}\n"
+            f"• Уникальный код: `{unique_code}`\n\n"
+            f"ℹ️ Поделитесь ссылкой с другими пользователями",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # Сбрасываем состояние
+        await state.clear()
     else:
-        # Если это не файл, но сообщение в канале
-        logging.info(f"Получено текстовое сообщение в канале: {message.text}")
+        # Если не файл, просим отправить файл
+        await message.answer("Пожалуйста, отправьте файл (документ, фото, видео и т.д.)")
+        return
 
 # Обработчик команды /start с параметром
 @dp.message(Command("start"))
@@ -313,51 +358,53 @@ async def cmd_start(message: Message, state: FSMContext):
         if file_info:
             logging.info(f"Найден файл с кодом {code}, тип: {file_info['file_type']}")
             try:
+                file_data = file_info['file_data']
+                
                 # Отправляем файл в зависимости от типа
                 if file_info['file_type'] == 'document':
                     await bot.send_document(
                         chat_id=chat_id,
-                        document=file_info['file_id'],
-                        caption=file_info['caption']
+                        document=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'photo':
                     await bot.send_photo(
                         chat_id=chat_id,
-                        photo=file_info['file_id'],
-                        caption=file_info['caption']
+                        photo=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'video':
                     await bot.send_video(
                         chat_id=chat_id,
-                        video=file_info['file_id'],
-                        caption=file_info['caption']
+                        video=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'audio':
                     await bot.send_audio(
                         chat_id=chat_id,
-                        audio=file_info['file_id'],
-                        caption=file_info['caption']
+                        audio=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'voice':
                     await bot.send_voice(
                         chat_id=chat_id,
-                        voice=file_info['file_id']
+                        voice=file_data['file_id']
                     )
                 elif file_info['file_type'] == 'video_note':
                     await bot.send_video_note(
                         chat_id=chat_id,
-                        video_note=file_info['file_id']
+                        video_note=file_data['file_id']
                     )
                 elif file_info['file_type'] == 'animation':
                     await bot.send_animation(
                         chat_id=chat_id,
-                        animation=file_info['file_id'],
-                        caption=file_info['caption']
+                        animation=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'sticker':
                     await bot.send_sticker(
                         chat_id=chat_id,
-                        sticker=file_info['file_id']
+                        sticker=file_data['file_id']
                     )
                 
                 # Показываем статистику
@@ -366,7 +413,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     f"📊 Статистика:\n"
                     f"• Использовано раз: {file_info['uses']}\n"
                     f"• Дата создания: {file_info['created_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
-                    f"🔗 Для нового файла загрузите его в канал"
+                    f"🔗 Для нового файла используйте команду /addfile"
                 )
                 
                 keyboard = InlineKeyboardMarkup(
@@ -389,7 +436,7 @@ async def cmd_start(message: Message, state: FSMContext):
             await message.answer("❌ Файл не найден или ссылка устарела.")
         return
     
-    # Стандартная команда /start без параметра - ВОЗВРАЩАЕМ СТАРОЕ ПРИВЕТСТВИЕ
+    # Стандартная команда /start без параметра
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
@@ -419,7 +466,7 @@ async def cmd_start(message: Message, state: FSMContext):
         
         sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
         await state.update_data(last_subscription_message_id=sent_message.message_id)
-        await state.set_state(SubscriptionStates.waiting_for_subscription)
+        await state.set_state(FileUploadStates.waiting_for_subscription)
 
 # Обработчик для кнопки "Проверить подписку и получить файл"
 @dp.callback_query(lambda c: c.data.startswith("check_and_get_"))
@@ -436,53 +483,54 @@ async def check_and_get_callback(callback_query: CallbackQuery):
         file_info = get_file_by_code(code)
         if file_info:
             try:
-                # Отправляем файл в зависимости от типа
+                file_data = file_info['file_data']
                 chat_id = callback_query.message.chat.id
                 
+                # Отправляем файл в зависимости от типа
                 if file_info['file_type'] == 'document':
                     await bot.send_document(
                         chat_id=chat_id,
-                        document=file_info['file_id'],
-                        caption=file_info['caption']
+                        document=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'photo':
                     await bot.send_photo(
                         chat_id=chat_id,
-                        photo=file_info['file_id'],
-                        caption=file_info['caption']
+                        photo=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'video':
                     await bot.send_video(
                         chat_id=chat_id,
-                        video=file_info['file_id'],
-                        caption=file_info['caption']
+                        video=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'audio':
                     await bot.send_audio(
                         chat_id=chat_id,
-                        audio=file_info['file_id'],
-                        caption=file_info['caption']
+                        audio=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'voice':
                     await bot.send_voice(
                         chat_id=chat_id,
-                        voice=file_info['file_id']
+                        voice=file_data['file_id']
                     )
                 elif file_info['file_type'] == 'video_note':
                     await bot.send_video_note(
                         chat_id=chat_id,
-                        video_note=file_info['file_id']
+                        video_note=file_data['file_id']
                     )
                 elif file_info['file_type'] == 'animation':
                     await bot.send_animation(
                         chat_id=chat_id,
-                        animation=file_info['file_id'],
-                        caption=file_info['caption']
+                        animation=file_data['file_id'],
+                        caption=file_data.get('caption', '')
                     )
                 elif file_info['file_type'] == 'sticker':
                     await bot.send_sticker(
                         chat_id=chat_id,
-                        sticker=file_info['file_id']
+                        sticker=file_data['file_id']
                     )
                 
                 await callback_query.message.answer("✅ Файл успешно отправлен!")
@@ -575,12 +623,13 @@ async def blacklist_middleware(handler, event: types.Update, data: dict):
 # Проверка подписки для всех сообщений
 @dp.message()
 async def handle_all_messages(message: Message, state: FSMContext):
-    # Пропускаем сообщения из канала с файлами
-    if message.chat.id == FILE_STORAGE_CHAT_ID:
+    # Пропускаем если пользователь в состоянии ожидания файла
+    current_state = await state.get_state()
+    if current_state == FileUploadStates.waiting_for_file.state:
         return
     
-    current_state = await state.get_state()
-    if current_state == SubscriptionStates.waiting_for_subscription.state:
+    # Пропускаем если пользователь в состоянии ожидания подписки
+    if current_state == FileUploadStates.waiting_for_subscription.state:
         return
     
     user_id = message.from_user.id
@@ -599,39 +648,50 @@ async def handle_all_messages(message: Message, state: FSMContext):
         
         sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
         await state.update_data(last_subscription_message_id=sent_message.message_id)
-        await state.set_state(SubscriptionStates.waiting_for_subscription)
+        await state.set_state(FileUploadStates.waiting_for_subscription)
 
-# Функция для проверки правильности ID канала
-async def verify_channel_id():
-    try:
-        # Пробуем получить информацию о канале
-        chat = await bot.get_chat(FILE_STORAGE_CHAT_ID)
-        logging.info(f"Канал найден: {chat.title} (ID: {chat.id})")
-        
-        # Проверяем права бота в канале
-        try:
-            member = await bot.get_chat_member(chat.id, (await bot.get_me()).id)
-            logging.info(f"Статус бота в канале: {member.status}")
-            return True
-        except Exception as e:
-            logging.error(f"Бот не является участником канала: {e}")
-            return False
-    except Exception as e:
-        logging.error(f"Не удалось получить информацию о канале {FILE_STORAGE_CHAT_ID}: {e}")
-        return False
+# Команда для проверки статистики файлов (только для разрешенных пользователей)
+@dp.message(Command("stats"))
+async def cmd_stats(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+    
+    if not is_user_allowed(user_id, username):
+        return
+    
+    # Показываем статистику файлов
+    total_files = len(file_storage)
+    if total_files == 0:
+        await message.answer("📊 В базе нет файлов.")
+        return
+    
+    # Считаем использование
+    total_uses = sum(file['uses'] for file in file_storage.values())
+    
+    # Формируем список файлов
+    files_list = []
+    for code, file_data in list(file_storage.items())[:10]:  # Первые 10 файлов
+        files_list.append(
+            f"• `{code}` - {file_data['file_type']} "
+            f"(использовано: {file_data['uses']} раз)"
+        )
+    
+    stats_text = (
+        f"📊 Статистика базы файлов:\n\n"
+        f"• Всего файлов: {total_files}\n"
+        f"• Всего использований: {total_uses}\n\n"
+        f"Последние файлы:\n" + "\n".join(files_list)
+    )
+    
+    if total_files > 10:
+        stats_text += f"\n\n... и еще {total_files - 10} файлов"
+    
+    await message.answer(stats_text, parse_mode=ParseMode.MARKDOWN)
 
 # Основная функция
 async def main():
-    # Проверяем канал перед запуском
-    logging.info("Проверяем доступ к каналу...")
-    channel_ok = await verify_channel_id()
-    if not channel_ok:
-        logging.error("Проблема с доступом к каналу! Проверьте:")
-        logging.error(f"1. Правильность ID канала: {FILE_STORAGE_CHAT_ID}")
-        logging.error(f"2. Бот добавлен в канал как администратор")
-        logging.error(f"3. Ссылка на канал: https://t.me/+PI0G1whs_AJjNzdi")
-    else:
-        logging.info("Канал проверен успешно!")
+    logging.info("Бот запускается...")
+    logging.info(f"Разрешенные пользователи для /addfile: {ALLOWED_USERS}")
     
     # Запускаем бота
     await dp.start_polling(bot)
