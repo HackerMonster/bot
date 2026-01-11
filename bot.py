@@ -880,8 +880,14 @@ async def cmd_start(message: Message, state: FSMContext):
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
         await delete_all_subscription_messages(chat_id)
         
-        # СТАРОЕ ПРИВЕТСТВИЕ
-        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
+        # ИЗМЕНЕННОЕ ПРИВЕТСТВИЕ
+        welcome_text = (
+            "👋 Привет!\n"
+            "📂 Я храню файлы с канала Dima Griefer\n\n"
+            "⚠️ Если бот не отвечает или работает некорректно — напишите сюда:\n"
+            "👉 @dimagriefer_bot"
+        )
+        
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -943,8 +949,14 @@ async def check_subscription_main_callback(callback_query: CallbackQuery, state:
             "✅ Вы успешно подписались на все каналы! Теперь вы можете пользоваться ботом."
         )
         
-        # СТАРОЕ ПРИВЕТСТВИЕ
-        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
+        # ИЗМЕНЕННОЕ ПРИВЕТСТВИЕ
+        welcome_text = (
+            "👋 Привет!\n"
+            "📂 Я храню файлы с канала Dima Griefer\n\n"
+            "⚠️ Если бот не отвечает или работает некорректно — напишите сюда:\n"
+            "👉 @dimagriefer_bot"
+        )
+        
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -1089,76 +1101,6 @@ async def handle_all_messages(message: Message, state: FSMContext):
         sent_message = await message.answer(warning_text, reply_markup=keyboard)
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(FileUploadStates.waiting_for_subscription)
-
-# Команда для проверки статистики файлов (только для разрешенных пользователей)
-@dp.message(Command("stats"))
-async def cmd_stats(message: Message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    
-    if not is_user_allowed(user_id, username):
-        return
-    
-    # Показываем статистику файлов
-    total_files = len(file_storage)
-    if total_files == 0:
-        await message.answer("📊 В базе нет файлов.")
-        return
-    
-    # Считаем использование
-    total_uses = sum(file['uses'] for file in file_storage.values())
-    
-    # Формируем список файлов
-    files_list = []
-    for code, file_data in list(file_storage.items())[:10]:  # Первые 10 файлов
-        files_list.append(
-            f"• `{code}` - {file_data['file_type']} "
-            f"(использовано: {file_data['uses']} раз)"
-        )
-    
-    stats_text = (
-        f"📊 Статистика базы файлов:\n\n"
-        f"• Всего файлов: {total_files}\n"
-        f"• Всего использований: {total_uses}\n\n"
-        f"Последние файлы:\n" + "\n".join(files_list)
-    )
-    
-    if total_files > 10:
-        stats_text += f"\n\n... и еще {total_files - 10} файлов"
-    
-    await message.answer(stats_text, parse_mode=ParseMode.MARKDOWN)
-
-# Команда для проверки статистики пользователей (только для разрешенных пользователей)
-@dp.message(Command("users"))
-async def cmd_users(message: Message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    
-    if not is_user_allowed(user_id, username):
-        return
-    
-    total_users = len(user_storage)
-    
-    stats_text = (
-        f"👥 <b>Статистика пользователей</b>\n\n"
-        f"• Всего пользователей бота: {total_users}\n"
-        f"• Последние 10 пользователей:\n"
-    )
-    
-    # Показываем последних 10 пользователей (если есть)
-    if total_users > 0:
-        users_list = list(user_storage)
-        last_users = users_list[-10:] if total_users > 10 else users_list
-        
-        for i, user_id in enumerate(last_users, 1):
-            try:
-                user = await bot.get_chat(user_id)
-                username_display = f"@{user.username}" if user.username else "без username"
-                stats_text += f"{i}. {user.first_name} ({username_display}) - ID: {user_id}\n"
-            except Exception as e:
-                stats_text += f"{i}. ID: {user_id} (недоступен)\n"
-    
-    await message.answer(stats_text, parse_mode=ParseMode.HTML)
 
 # Основная функция
 async def main():
