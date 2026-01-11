@@ -8,6 +8,7 @@ from aiogram.fsm.state import State, StatesGroup
 import asyncio
 import uuid
 from datetime import datetime
+import pyperclip
 
 # Токен бота
 API_TOKEN = '8323926582:AAF0Nzg0HdhF0_4WrlaOonBA4bLokSJxWWU'
@@ -88,26 +89,46 @@ async def is_chat_blacklisted(chat_id: int) -> bool:
     
     return False
 
-# Функция для создания клавиатуры с кнопками подписки
-def create_subscription_keyboard():
+# Функция для создания клавиатуры с кнопками подписки (ТОЛЬКО КНОПКИ ПОДПИСКИ)
+def create_subscription_keyboard_only():
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="1️⃣ Подписаться", 
+                    text="1️⃣ Подписаться — https://t.me/basegriefer", 
                     url="https://t.me/basegriefer"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="2️⃣ Подписаться", 
+                    text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
                     url="https://t.me/chatbasegriefer"
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="✅ Проверить подписку",
-                    callback_data="check_subscription"
+                    callback_data="check_subscription_main"
+                )
+            ]
+        ]
+    )
+    return keyboard
+
+# Функция для создания клавиатуры с кнопкой копирования ссылки
+def create_copy_link_keyboard(link: str):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🔗 Копировать ссылку",
+                    callback_data=f"copy_link_{link}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👾 Наш Канал",
+                    url="https://t.me/basegriefer"
                 )
             ]
         ]
@@ -272,22 +293,14 @@ async def handle_file_upload(message: Message, state: FSMContext):
         bot_username = (await bot.get_me()).username
         link = f"https://t.me/{bot_username}?start={unique_code}"
         
-        # Создаем кнопку с ссылкой на канал
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="👾 Наш Канал - https://t.me/basegriefer",
-                        url="https://t.me/basegriefer"
-                    )
-                ]
-            ]
-        )
+        # Создаем клавиатуру с кнопкой копирования
+        keyboard = create_copy_link_keyboard(link)
         
-        # Отправляем сообщение с автотекстом
+        # Отправляем сообщение о успешной загрузке
         await message.answer(
-            f"Вот файл 📁\n\n"
-            f"🔗 Ссылка: `{link}`",
+            f"✅ Файл успешно загружен!\n\n"
+            f"🔗 Уникальная ссылка:\n`{link}`\n\n"
+            f"📊 Нажмите на кнопку ниже, чтобы скопировать ссылку.",
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN
         )
@@ -316,31 +329,42 @@ async def cmd_start(message: Message, state: FSMContext):
         subscription_status = await check_user_subscription(user_id)
         
         if subscription_status["subscribed_count"] < subscription_status["total_count"]:
-            # Пользователь не подписан
-            warning_text = (
-                "⚠️ Подпишитесь на все каналы.\n"
-                f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-                "❗ Нажмите по кнопкам выше, затем проверьте подписку."
-            )
+            # ИСПРАВЛЕННЫЙ ТЕКСТ: НЕ показывает сообщение с подпиской
+            # Вместо этого просто показываем стандартное приветствие с требованием подписки
             
+            # Удаляем старые сообщения о подписке
+            await delete_all_subscription_messages(chat_id)
+            
+            # Показываем стандартное требование подписки
+            warning_text = "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
+            
+            # Используем клавиатуру только с кнопками подписки
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
-                            text="👾 Наш Канал", 
+                            text="1️⃣ Подписаться — https://t.me/basegriefer", 
                             url="https://t.me/basegriefer"
                         )
                     ],
                     [
                         InlineKeyboardButton(
+                            text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                            url="https://t.me/chatbasegriefer"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
                             text="✅ Проверить подписку",
-                            callback_data=f"check_and_get_{code}"
+                            callback_data="check_subscription_main"
                         )
                     ]
                 ]
             )
             
-            await message.answer(warning_text, reply_markup=keyboard)
+            sent_message = await message.answer(warning_text, reply_markup=keyboard)
+            await state.update_data(last_subscription_message_id=sent_message.message_id)
+            await state.set_state(FileUploadStates.waiting_for_subscription)
             return
         
         # Если подписан - отправляем файл
@@ -350,164 +374,73 @@ async def cmd_start(message: Message, state: FSMContext):
             try:
                 file_data = file_info['file_data']
                 
-                # ОТПРАВЛЯЕМ ФАЙЛ С КНОПКОЙ КАК НА ФОТО
-                if file_info['file_type'] == 'document':
-                    # Кнопка как на фото
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
+                # Создаем кнопку для файла
+                keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="Наш канал 👾",
+                                url="https://t.me/basegriefer"
+                            )
                         ]
-                    )
-                    
+                    ]
+                )
+                
+                # Отправляем файл с кнопкой
+                if file_info['file_type'] == 'document':
                     await bot.send_document(
                         chat_id=chat_id,
                         document=file_data['file_id'],
                         caption=file_data.get('caption', ''),
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'photo':
-                    # Кнопка как на фото
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_photo(
                         chat_id=chat_id,
                         photo=file_data['file_id'],
                         caption=file_data.get('caption', ''),
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'video':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_video(
                         chat_id=chat_id,
                         video=file_data['file_id'],
                         caption=file_data.get('caption', ''),
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'audio':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_audio(
                         chat_id=chat_id,
                         audio=file_data['file_id'],
                         caption=file_data.get('caption', ''),
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'voice':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_voice(
                         chat_id=chat_id,
                         voice=file_data['file_id'],
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'video_note':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_video_note(
                         chat_id=chat_id,
                         video_note=file_data['file_id'],
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'animation':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
                     await bot.send_animation(
                         chat_id=chat_id,
                         animation=file_data['file_id'],
                         caption=file_data.get('caption', ''),
                         reply_markup=keyboard
                     )
-                    
                 elif file_info['file_type'] == 'sticker':
                     # Для стикеров сначала отправляем стикер, потом кнопку отдельно
                     await bot.send_sticker(
                         chat_id=chat_id,
                         sticker=file_data['file_id']
                     )
-                    
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await message.answer(
-                        "Ваш стикер",
-                        reply_markup=keyboard
-                    )
-                
-                # НЕ отправляем статистику, просто отправляем файл с кнопкой и всё
+                    await message.answer("Ваш стикер", reply_markup=keyboard)
                 
             except Exception as e:
                 logging.error(f"Ошибка при отправке файла: {e}")
@@ -538,11 +471,10 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         await delete_all_subscription_messages(chat_id)
         
-        # ОБНОВЛЕННЫЙ ТЕКСТ С КНОПКАМИ
-        warning_text = (
-            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
-        )
+        # ТЕКСТ С ТРЕБОВАНИЕМ ПОДПИСКИ
+        warning_text = "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
         
+        # Клавиатура только с кнопками подписки
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -560,7 +492,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(
                         text="✅ Проверить подписку",
-                        callback_data="check_subscription"
+                        callback_data="check_subscription_main"
                     )
                 ]
             ]
@@ -570,226 +502,42 @@ async def cmd_start(message: Message, state: FSMContext):
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(FileUploadStates.waiting_for_subscription)
 
-# Обработчик для кнопки "Проверить подписку и получить файл"
-@dp.callback_query(lambda c: c.data.startswith("check_and_get_"))
-async def check_and_get_callback(callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    code = callback_query.data.replace("check_and_get_", "")
+# Обработчик для кнопки "Копировать ссылку"
+@dp.callback_query(lambda c: c.data.startswith("copy_link_"))
+async def copy_link_callback(callback_query: CallbackQuery):
+    # Извлекаем ссылку из callback_data
+    link = callback_query.data.replace("copy_link_", "")
     
-    subscription_status = await check_user_subscription(user_id)
-    
-    if subscription_status["subscribed_count"] == subscription_status["total_count"]:
-        # Пользователь подписался
-        await callback_query.message.delete()
+    try:
+        # Копируем ссылку в буфер обмена
+        pyperclip.copy(link)
         
-        file_info = get_file_by_code(code)
-        if file_info:
-            try:
-                file_data = file_info['file_data']
-                chat_id = callback_query.message.chat.id
-                
-                # Отправляем файл с кнопкой как на фото
-                if file_info['file_type'] == 'document':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_document(
-                        chat_id=chat_id,
-                        document=file_data['file_id'],
-                        caption=file_data.get('caption', ''),
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'photo':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_photo(
-                        chat_id=chat_id,
-                        photo=file_data['file_id'],
-                        caption=file_data.get('caption', ''),
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'video':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_video(
-                        chat_id=chat_id,
-                        video=file_data['file_id'],
-                        caption=file_data.get('caption', ''),
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'audio':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_audio(
-                        chat_id=chat_id,
-                        audio=file_data['file_id'],
-                        caption=file_data.get('caption', ''),
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'voice':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_voice(
-                        chat_id=chat_id,
-                        voice=file_data['file_id'],
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'video_note':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_video_note(
-                        chat_id=chat_id,
-                        video_note=file_data['file_id'],
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'animation':
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await bot.send_animation(
-                        chat_id=chat_id,
-                        animation=file_data['file_id'],
-                        caption=file_data.get('caption', ''),
-                        reply_markup=keyboard
-                    )
-                    
-                elif file_info['file_type'] == 'sticker':
-                    # Для стикеров сначала отправляем стикер, потом кнопку
-                    await bot.send_sticker(
-                        chat_id=chat_id,
-                        sticker=file_data['file_id']
-                    )
-                    
-                    keyboard = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="Наш канал 👾",
-                                    url="https://t.me/basegriefer"
-                                )
-                            ]
-                        ]
-                    )
-                    
-                    await callback_query.message.answer(
-                        "Ваш стикер",
-                        reply_markup=keyboard
-                    )
-                
-                # НЕ отправляем сообщение об успехе
-                
-            except Exception as e:
-                await callback_query.message.answer(f"❌ Ошибка при отправке файла: {str(e)}")
-    else:
-        # ОБНОВЛЕННЫЙ ТЕКСТ ПРИ НЕПОДПИСКЕ
-        warning_text = (
-            f"⚠️ Подпишитесь на все каналы.\n"
-            f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-            "❗ Нажмите по кнопкам выше, затем проверьте подписку."
+        # Отправляем подтверждение
+        await callback_query.answer("✅ Ссылка скопирована в буфер обмена!", show_alert=True)
+        
+        # Показываем ссылку еще раз
+        await callback_query.message.edit_text(
+            f"✅ Файл успешно загружен!\n\n"
+            f"🔗 Уникальная ссылка (скопирована):\n`{link}`\n\n"
+            f"📊 Ссылка скопирована! Теперь вы можете поделиться ею.",
+            reply_markup=callback_query.message.reply_markup,
+            parse_mode=ParseMode.MARKDOWN
         )
         
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
-                        url="https://t.me/basegriefer"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
-                        url="https://t.me/chatbasegriefer"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="✅ Проверить подписку",
-                        callback_data=f"check_and_get_{code}"
-                    )
-                ]
-            ]
-        )
-        
-        await callback_query.message.edit_text(warning_text, reply_markup=keyboard)
-        await callback_query.answer()
+    except Exception as e:
+        logging.error(f"Ошибка при копировании ссылки: {e}")
+        await callback_query.answer("❌ Не удалось скопировать ссылку", show_alert=True)
 
-# Обработчик нажатия кнопки проверки подписки
-@dp.callback_query(lambda c: c.data == "check_subscription")
-async def check_subscription_callback(callback_query: CallbackQuery, state: FSMContext):
+# Обработчик для кнопки "Проверить подписку" (основная)
+@dp.callback_query(lambda c: c.data == "check_subscription_main")
+async def check_subscription_main_callback(callback_query: CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
     chat_id = callback_query.message.chat.id
     
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
+        # Пользователь подписан
         await delete_all_subscription_messages(chat_id)
         
         success_message = await callback_query.message.answer(
@@ -817,10 +565,15 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
             logging.error(f"Не удалось удалить временное сообщение об успехе: {e}")
         
         await state.clear()
-    else:
-        await delete_all_subscription_messages(chat_id)
         
-        # ОБНОВЛЕННЫЙ ТЕКСТ ПРИ НЕПОДПИСКЕ
+        # Удаляем старое сообщение о подписке
+        try:
+            await callback_query.message.delete()
+        except Exception as e:
+            logging.error(f"Не удалось удалить старое сообщение: {e}")
+            
+    else:
+        # Пользователь все еще не подписан
         warning_text = (
             f"⚠️ Подпишитесь на все каналы.\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
@@ -844,18 +597,13 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
                 [
                     InlineKeyboardButton(
                         text="✅ Проверить подписку",
-                        callback_data="check_subscription"
+                        callback_data="check_subscription_main"
                     )
                 ]
             ]
         )
         
-        await callback_query.message.answer(warning_text, reply_markup=keyboard)
-        
-        try:
-            await callback_query.message.delete()
-        except Exception as e:
-            logging.error(f"Не удалось удалить старое сообщение: {e}")
+        await callback_query.message.edit_text(warning_text, reply_markup=keyboard)
     
     await callback_query.answer()
 
@@ -905,11 +653,10 @@ async def handle_all_messages(message: Message, state: FSMContext):
     if subscription_status["subscribed_count"] < subscription_status["total_count"]:
         await delete_all_subscription_messages(chat_id)
         
-        # ОБНОВЛЕННЫЙ ТЕКСТ С КНОПКАМИ
-        warning_text = (
-            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
-        )
+        # ТЕКСТ С ТРЕБОВАНИЕМ ПОДПИСКИ
+        warning_text = "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
         
+        # Клавиатура только с кнопками подписки
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -927,7 +674,7 @@ async def handle_all_messages(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(
                         text="✅ Проверить подписку",
-                        callback_data="check_subscription"
+                        callback_data="check_subscription_main"
                     )
                 ]
             ]
