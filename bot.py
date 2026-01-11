@@ -6,6 +6,8 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import asyncio
+import uuid
+from datetime import datetime
 
 # Токен бота
 API_TOKEN = '8323926582:AAF0Nzg0HdhF0_4WrlaOonBA4bLokSJxWWU'
@@ -17,8 +19,10 @@ CHANNELS = [
 ]
 
 # ID чатов и каналов, где бот НЕ ДОЛЖЕН работать
-# Получите ID этих чатов с помощью бота @username_to_id_bot или @getidsbot
-BLACKLIST_CHAT_IDS = [-1002197945807, -1001621247413]  # Замените на реальные ID
+BLACKLIST_CHAT_IDS = [-1002197945807, -1001621247413]
+
+# ID группы с файлами (где будет работать функционал)
+FILE_STORAGE_CHAT_ID = 1003603301766
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +30,9 @@ logging.basicConfig(level=logging.INFO)
 # Инициализация бота и диспетчера
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+
+# Хранилище файлов (в памяти, можно заменить на БД)
+file_storage = {}
 
 class SubscriptionStates(StatesGroup):
     waiting_for_subscription = State()
@@ -36,9 +43,7 @@ async def is_chat_blacklisted(chat_id: int) -> bool:
     Проверяет, находится ли чат в черном списке
     Возвращает True если бот должен игнорировать этот чат
     """
-    # Если BLACKLIST_CHAT_IDS пуст, попробуем определить ID автоматически
     if not BLACKLIST_CHAT_IDS:
-        # Пробуем получить информацию о каналах и проверить их ID
         try:
             for channel in CHANNELS:
                 chat = await bot.get_chat(f"@{channel['username']}")
@@ -47,15 +52,13 @@ async def is_chat_blacklisted(chat_id: int) -> bool:
         except Exception as e:
             logging.error(f"Не удалось получить ID чатов: {e}")
     
-    # Проверяем, находится ли chat_id в черном списке
     if chat_id in BLACKLIST_CHAT_IDS:
         return True
     
-    # Дополнительная проверка по username (если не нашли по ID)
     try:
         chat = await bot.get_chat(chat_id)
         if chat.username and chat.username in ["basegriefer", "chatbasegriefer"]:
-            BLACKLIST_CHAT_IDS.append(chat_id)  # Запоминаем ID для будущих проверок
+            BLACKLIST_CHAT_IDS.append(chat_id)
             return True
     except Exception as e:
         logging.error(f"Ошибка при проверке чата {chat_id}: {e}")
@@ -95,9 +98,7 @@ async def check_user_subscription(user_id: int) -> dict:
     
     for channel in CHANNELS:
         try:
-            # Проверяем подписку через get_chat_member
             chat_member = await bot.get_chat_member(f"@{channel['username']}", user_id)
-            # Проверяем статус подписки
             if chat_member.status in ["member", "administrator", "creator"]:
                 subscribed_count += 1
             else:
@@ -114,17 +115,11 @@ async def check_user_subscription(user_id: int) -> dict:
 
 # Функция для удаления всех сообщений бота о подписке
 async def delete_all_subscription_messages(chat_id: int):
-    """
-    Удаляет все сообщения бота о подписке в указанном чате
-    """
     try:
         messages_to_delete = []
         
-        # Проверяем последние 50 сообщений в чате
         async for msg in bot.get_chat_history(chat_id, limit=50):
-            # Если сообщение от бота
             if msg.from_user and msg.from_user.id == bot.id:
-                # Проверяем текст сообщения
                 if msg.text and any(keyword in msg.text for keyword in [
                     "Прежде чем пользоваться ботом",
                     "Подпишитесь на все каналы",
@@ -134,11 +129,10 @@ async def delete_all_subscription_messages(chat_id: int):
                 ]):
                     messages_to_delete.append(msg.message_id)
         
-        # Удаляем все найденные сообщения
         for msg_id in messages_to_delete:
             try:
                 await bot.delete_message(chat_id, msg_id)
-                await asyncio.sleep(0.1)  # Небольшая задержка, чтобы не превысить лимиты
+                await asyncio.sleep(0.1)
             except Exception as e:
                 logging.error(f"Не удалось удалить сообщение {msg_id}: {e}")
         
@@ -147,56 +141,175 @@ async def delete_all_subscription_messages(chat_id: int):
     except Exception as e:
         logging.error(f"Ошибка при удалении сообщений о подписке: {e}")
 
-# Мидлварь для проверки всех входящих сообщений
-@dp.update.middleware()
-async def blacklist_middleware(handler, event: types.Update, data: dict):
-    chat_id = None
-    
-    # Определяем chat_id в зависимости от типа события
-    if event.message:
-        chat_id = event.message.chat.id
-    elif event.callback_query:
-        chat_id = event.callback_query.message.chat.id
-    elif event.edited_message:
-        chat_id = event.edited_message.chat.id
-    
-    # Если определили chat_id, проверяем черный список
-    if chat_id:
-        if await is_chat_blacklisted(chat_id):
-            logging.info(f"Бот проигнорировал событие в черном списке чата: {chat_id}")
-            
-            # Для callback_query нужно ответить, чтобы не висела "часик"
-            if event.callback_query:
-                try:
-                    await event.callback_query.answer()
-                except:
-                    pass
-            
-            return  # Полностью прерываем обработку
-    
-    # Продолжаем обработку если чат не в черном списке
-    return await handler(event, data)
+# Функция для сохранения информации о файле
+def save_file_info(file_id, file_type, message_id, chat_id):
+    unique_code = str(uuid.uuid4())[:12]
+    file_storage[unique_code] = {
+        'file_id': file_id,
+        'file_type': file_type,
+        'message_id': message_id,
+        'chat_id': chat_id,
+        'created_at': datetime.now(),
+        'uses': 0
+    }
+    return unique_code
 
-# Стартовая команда (будет игнорироваться в черном списке благодаря middleware)
+# Функция для получения файла по коду
+def get_file_by_code(code):
+    if code in file_storage:
+        file_storage[code]['uses'] += 1
+        return file_storage[code]
+    return None
+
+# Обработчик загрузки файлов в группе 1003603301766
+@dp.message(lambda message: message.chat.id == FILE_STORAGE_CHAT_ID and (message.document or message.photo))
+async def handle_file_upload(message: Message):
+    file_id = None
+    file_type = None
+    caption = message.caption or "Файл"
+    
+    if message.document:
+        file_id = message.document.file_id
+        file_type = "document"
+    elif message.photo:
+        file_id = message.photo[-1].file_id
+        file_type = "photo"
+    
+    if file_id:
+        # Создаем уникальный код
+        unique_code = save_file_info(file_id, file_type, message.message_id, message.chat.id)
+        
+        # Создаем ссылку
+        bot_username = (await bot.get_me()).username
+        link = f"https://t.me/{bot_username}?start={unique_code}"
+        
+        # Создаем кнопку
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="👾 Наш Канал",
+                        url="https://t.me/basegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="📥 Получить файл",
+                        url=link
+                    )
+                ]
+            ]
+        )
+        
+        # Отправляем сообщение с кнопкой
+        await message.reply(
+            f"📁 Файл сохранен!\n\n"
+            f"🔗 Ссылка для получения: `{link}`\n\n"
+            f"ℹ️ Нажмите кнопку ниже, чтобы перейти к боту",
+            reply_markup=keyboard,
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+# Обработчик команды /start с параметром
 @dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Проверяем подписку
+    # Проверяем, есть ли параметр в команде start
+    if len(message.text.split()) > 1:
+        code = message.text.split()[1]
+        
+        # Проверяем подписку перед выдачей файла
+        subscription_status = await check_user_subscription(user_id)
+        
+        if subscription_status["subscribed_count"] < subscription_status["total_count"]:
+            # Пользователь не подписан
+            warning_text = (
+                "❗ | Для получения файла подпишитесь на каналы!\n\n"
+                f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
+                "❗ После подписки проверьте еще раз."
+            )
+            
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="👾 Наш Канал", 
+                            url="https://t.me/basegriefer"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Проверить подписку",
+                            callback_data=f"check_and_get_{code}"
+                        )
+                    ]
+                ]
+            )
+            
+            await message.answer(warning_text, reply_markup=keyboard)
+            return
+        
+        # Если подписан - отправляем файл
+        file_info = get_file_by_code(code)
+        if file_info:
+            try:
+                if file_info['file_type'] == 'document':
+                    await bot.copy_message(
+                        chat_id=chat_id,
+                        from_chat_id=file_info['chat_id'],
+                        message_id=file_info['message_id']
+                    )
+                elif file_info['file_type'] == 'photo':
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=file_info['file_id'],
+                        caption=f"📸 Фото из канала\n\n"
+                               f"🔗 Получено по ссылке\n"
+                               f"📊 Использовано раз: {file_info['uses']}"
+                    )
+                
+                # Показываем статистику
+                stats_text = (
+                    f"✅ Файл успешно отправлен!\n\n"
+                    f"📊 Статистика:\n"
+                    f"• Использовано раз: {file_info['uses']}\n"
+                    f"• Дата создания: {file_info['created_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
+                    f"🔗 Для нового файла загрузите его в группу"
+                )
+                
+                keyboard = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="👾 Наш Канал",
+                                url="https://t.me/basegriefer"
+                            )
+                        ]
+                    ]
+                )
+                
+                await message.answer(stats_text, reply_markup=keyboard)
+                
+            except Exception as e:
+                await message.answer(f"❌ Ошибка при отправке файла: {str(e)}")
+        else:
+            await message.answer("❌ Файл не найден или ссылка устарела.")
+        return
+    
+    # Стандартная команда /start без параметра
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
-        # Удаляем все старые сообщения о подписке
         await delete_all_subscription_messages(chat_id)
         
-        # Пользователь подписан на все каналы
-        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
+        welcome_text = "👋 Привет, я храню файлы с канала BaseGriefer!\n\n📁 Загрузите файл в группу, чтобы получить ссылку."
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="Наш канал 🌟", 
+                        text="👾 Наш Канал", 
                         url="https://t.me/basegriefer"
                     )
                 ]
@@ -204,10 +317,8 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         await message.answer(welcome_text, reply_markup=keyboard)
     else:
-        # Удаляем старые сообщения о подписке перед отправкой нового
         await delete_all_subscription_messages(chat_id)
         
-        # Пользователь не подписан
         warning_text = (
             "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!\n\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
@@ -215,9 +326,43 @@ async def cmd_start(message: Message, state: FSMContext):
         )
         
         sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
-        # Сохраняем ID последнего сообщения о подписке
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(SubscriptionStates.waiting_for_subscription)
+
+# Обработчик для кнопки "Проверить подписку и получить файл"
+@dp.callback_query(lambda c: c.data.startswith("check_and_get_"))
+async def check_and_get_callback(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    code = callback_query.data.replace("check_and_get_", "")
+    
+    subscription_status = await check_user_subscription(user_id)
+    
+    if subscription_status["subscribed_count"] == subscription_status["total_count"]:
+        # Пользователь подписался
+        await callback_query.message.delete()
+        
+        file_info = get_file_by_code(code)
+        if file_info:
+            try:
+                if file_info['file_type'] == 'document':
+                    await bot.copy_message(
+                        chat_id=callback_query.message.chat.id,
+                        from_chat_id=file_info['chat_id'],
+                        message_id=file_info['message_id']
+                    )
+                elif file_info['file_type'] == 'photo':
+                    await bot.send_photo(
+                        chat_id=callback_query.message.chat.id,
+                        photo=file_info['file_id'],
+                        caption=f"📸 Фото из канала"
+                    )
+                
+                await callback_query.message.answer("✅ Файл успешно отправлен!")
+                
+            except Exception as e:
+                await callback_query.message.answer(f"❌ Ошибка при отправке файла: {str(e)}")
+    else:
+        await callback_query.answer("❌ Вы все еще не подписаны на все каналы!", show_alert=True)
 
 # Обработчик нажатия кнопки проверки подписки
 @dp.callback_query(lambda c: c.data == "check_subscription")
@@ -225,26 +370,21 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
     user_id = callback_query.from_user.id
     chat_id = callback_query.message.chat.id
     
-    # Проверяем подписку
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
-        # Пользователь подписан на все каналы
-        # Удаляем ВСЕ сообщения бота о подписке
         await delete_all_subscription_messages(chat_id)
         
-        # Отправляем временное сообщение об успехе (оно само удалится)
         success_message = await callback_query.message.answer(
             "✅ Вы успешно подписались на все каналы! Теперь вы можете пользоваться ботом."
         )
         
-        # Отправляем основное приветственное сообщение
-        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
+        welcome_text = "👋 Привет, я храню файлы с канала BaseGriefer!\n\n📁 Загрузите файл в группу, чтобы получить ссылку."
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="Наш канал 🌟", 
+                        text="👾 Наш Канал", 
                         url="https://t.me/basegriefer"
                     )
                 ]
@@ -252,7 +392,6 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
         )
         await callback_query.message.answer(welcome_text, reply_markup=keyboard)
         
-        # Удаляем временное сообщение об успехе через 3 секунды
         await asyncio.sleep(3)
         try:
             await success_message.delete()
@@ -261,21 +400,16 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
         
         await state.clear()
     else:
-        # Пользователь все еще не подписан
-        # Удаляем предыдущие сообщения о подписке перед обновлением
         await delete_all_subscription_messages(chat_id)
         
-        # Отправляем новое сообщение о необходимости подписки
         warning_text = (
             f"⚠️ Подпишитесь на все каналы.\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
             "❗ Нажмите по кнопкам выше, затем проверьте подписку."
         )
         
-        # Отправляем новое сообщение вместо редактирования старого
         await callback_query.message.answer(warning_text, reply_markup=create_subscription_keyboard())
         
-        # Пытаемся удалить старое сообщение с кнопкой
         try:
             await callback_query.message.delete()
         except Exception as e:
@@ -283,10 +417,35 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
     
     await callback_query.answer()
 
-# Проверка подписки для всех сообщений (кроме команды /start)
+# Мидлварь для проверки всех входящих сообщений
+@dp.update.middleware()
+async def blacklist_middleware(handler, event: types.Update, data: dict):
+    chat_id = None
+    
+    if event.message:
+        chat_id = event.message.chat.id
+    elif event.callback_query:
+        chat_id = event.callback_query.message.chat.id
+    elif event.edited_message:
+        chat_id = event.edited_message.chat.id
+    
+    if chat_id:
+        if await is_chat_blacklisted(chat_id):
+            logging.info(f"Бот проигнорировал событие в черном списке чата: {chat_id}")
+            
+            if event.callback_query:
+                try:
+                    await event.callback_query.answer()
+                except:
+                    pass
+            
+            return
+    
+    return await handler(event, data)
+
+# Проверка подписки для всех сообщений
 @dp.message()
 async def handle_all_messages(message: Message, state: FSMContext):
-    # Если пользователь в процессе подписки, игнорируем
     current_state = await state.get_state()
     if current_state == SubscriptionStates.waiting_for_subscription.state:
         return
@@ -294,16 +453,11 @@ async def handle_all_messages(message: Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Проверяем подписку
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] < subscription_status["total_count"]:
-        # Пользователь не подписан
-        
-        # Удаляем все предыдущие сообщения о подписке
         await delete_all_subscription_messages(chat_id)
         
-        # Отправляем новое сообщение о подписке
         warning_text = (
             "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!\n\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
@@ -311,7 +465,6 @@ async def handle_all_messages(message: Message, state: FSMContext):
         )
         
         sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
-        # Сохраняем ID последнего сообщения о подписке
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(SubscriptionStates.waiting_for_subscription)
 
