@@ -110,13 +110,13 @@ def create_subscription_keyboard_only():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                    text="1️⃣ Подписаться", 
                     url="https://t.me/basegriefer"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                    text="2️⃣ Подписаться", 
                     url="https://t.me/chatbasegriefer"
                 )
             ],
@@ -710,8 +710,8 @@ async def handle_file_upload(message: Message, state: FSMContext):
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="👾 Наш Канал",
-                        url="https://t.me/basegriefer"
+                        text="👾 Пост-бот",
+                        url="https://t.me/posted?start=1e922942-ad4"
                     )
                 ]
             ]
@@ -768,13 +768,13 @@ async def cmd_start(message: Message, state: FSMContext):
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
-                            text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                            text="1️⃣ Подписаться", 
                             url="https://t.me/basegriefer"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                            text="2️⃣ Подписаться", 
                             url="https://t.me/chatbasegriefer"
                         )
                     ],
@@ -910,13 +910,13 @@ async def cmd_start(message: Message, state: FSMContext):
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        text="1️⃣ Подписаться", 
                         url="https://t.me/basegriefer"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        text="2️⃣ Подписаться", 
                         url="https://t.me/chatbasegriefer"
                     )
                 ],
@@ -988,20 +988,20 @@ async def check_subscription_main_callback(callback_query: CallbackQuery, state:
         warning_text = (
             f"⚠️ Подпишитесь на все каналы.\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-            "❗ Нажмите по кнопкам выше, затем проверьте подписку."
+            "❗ Нажмите по кнопкам ниже, затем проверьте подписку."
         )
         
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        text="1️⃣ Подписаться", 
                         url="https://t.me/basegriefer"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        text="2️⃣ Подписаться", 
                         url="https://t.me/chatbasegriefer"
                     )
                 ],
@@ -1079,13 +1079,13 @@ async def handle_all_messages(message: Message, state: FSMContext):
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        text="1️⃣ Подписаться", 
                         url="https://t.me/basegriefer"
                     )
                 ],
                 [
                     InlineKeyboardButton(
-                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        text="2️⃣ Подписаться", 
                         url="https://t.me/chatbasegriefer"
                     )
                 ],
