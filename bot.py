@@ -1,8 +1,8 @@
-import logging
-from typing import Optional
+import os
+import uuid
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, ContextTypes
-from telegram.constants import ChatMemberStatus
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import logging
 
 # Настройка логирования
 logging.basicConfig(
@@ -11,171 +11,101 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Конфигурация
-BOT_TOKEN = "7948105899:AAHsPWxKPd7X9g4oEgzzkxwDQV_I47rTh00"  # Замените на токен вашего бота
+# Токен вашего бота (получите у @BotFather)
+TOKEN = "7948105899:AAHsPWxKPd7X9g4oEgzzkxwDQV_I47rTh00"
 
-# Список каналов для проверки подписки
-CHANNELS_TO_CHECK = [
-    "@steal_a_braiinrotai",  # Ваш канал с username
-    -1002987239953,          # Ваш канал с ID (уже как число)
-]
+# Папка для сохранения файлов
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Проверяет, подписан ли пользователь на все необходимые каналы"""
-    for channel in CHANNELS_TO_CHECK:
-        try:
-            # Получаем информацию о статусе пользователя в канале
-            chat_member = await context.bot.get_chat_member(
-                chat_id=channel, 
-                user_id=user_id
-            )
-            
-            # Проверяем статус подписки
-            if chat_member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]:
-                logger.info(f"Пользователь {user_id} не подписан на {channel}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Ошибка при проверке подписки на {channel}: {e}")
-            return False
-    
-    return True
+# Словарь для хранения соответствий: file_id -> уникальный код
+file_database = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     """Обработчик команды /start"""
     user = update.effective_user
-    chat_id = update.effective_chat.id
-    
-    logger.info(f"Пользователь {user.id} ({user.username}) запустил бота")
-    
-    # Проверяем подписку
-    is_subscribed = await check_subscription(user.id, context)
-    
-    if not is_subscribed:
-        # Создаем клавиатуру с кнопками для подписки
-        buttons = []
-        
-        # Для первого канала (username)
-        try:
-            chat1 = await context.bot.get_chat("@steal_a_braiinrotai")
-            channel1_name = chat1.title if chat1.title else "steal_a_braiinrotai"
-            buttons.append([InlineKeyboardButton(
-                text=f"📢 Подписаться на {channel1_name}",
-                url=f"https://t.me/steal_a_braiinrotai"
-            )])
-        except Exception as e:
-            logger.error(f"Ошибка получения информации о канале: {e}")
-            buttons.append([InlineKeyboardButton(
-                text="📢 Подписаться на steal_a_braiinrotai",
-                url="https://t.me/steal_a_braiinrotai"
-            )])
-        
-        # Для второго канала (ID)
-        try:
-            chat2 = await context.bot.get_chat(-1002987239953)
-            channel2_name = chat2.title if chat2.title else "Второй канал"
-            buttons.append([InlineKeyboardButton(
-                text=f"📢 Подписаться на {channel2_name}",
-                url=f"https://t.me/c/{str(-1002987239953)[4:]}"  # Формат ссылки для ID
-            )])
-        except Exception as e:
-            logger.error(f"Ошибка получения информации о канале 2: {e}")
-            # Альтернативный способ создания ссылки
-            buttons.append([InlineKeyboardButton(
-                text="📢 Подписаться на канал 2",
-                url="https://t.me/+example"  # Нужна публичная ссылка
-            )])
-        
-        # Добавляем кнопку проверки подписки
-        buttons.append([InlineKeyboardButton(
-            text="✅ Я подписался! Проверить",
-            callback_data="check_subscription"
-        )])
-        
-        keyboard = InlineKeyboardMarkup(buttons)
-        
-        await update.message.reply_text(
-            f"Привет, {user.first_name}! 👋\n\n"
-            "⚠️ Для использования бота необходимо подписаться на наши каналы:\n\n"
-            "1. @steal_a_braiinrotai\n"
-            "2. Основной канал\n\n"
-            "После подписки нажмите кнопку '✅ Я подписался! Проверить'",
-            reply_markup=keyboard
-        )
-    else:
-        # Пользователь подписан на все каналы
-        await update.message.reply_text(
-            f"Привет, {user.first_name}! 🖐️\n\n"
-            "Добро пожаловать в наш бот! 🤖\n"
-            "✅ Вы успешно прошли проверку подписки!\n\n"
-            "Теперь вы можете пользоваться ботом!"
-        )
+    await update.message.reply_text(
+        f"Привет {user.first_name}! Отправь мне фото, и я дам тебе уникальную ссылку на него.\n"
+        f"Мой создатель: @MERIXTI"
+    )
 
-async def check_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик нажатия кнопки проверки подписки"""
-    query = update.callback_query
-    await query.answer()
-    
-    user = update.effective_user
-    logger.info(f"Пользователь {user.id} нажал проверку подписки")
-    
-    if query.data == "check_subscription":
-        # Проверяем подписку
-        is_subscribed = await check_subscription(user.id, context)
+async def handle_photo(update: Update, context: CallbackContext) -> None:
+    """Обработчик фотографий"""
+    try:
+        # Получаем фото с максимальным качеством
+        photo = update.message.photo[-1]
+        file_id = photo.file_id
         
-        if is_subscribed:
-            # Удаляем предыдущее сообщение с кнопками
-            try:
-                await query.delete_message()
-            except:
-                pass
+        # Генерируем уникальный код
+        unique_code = str(uuid.uuid4())[:16]
+        
+        # Сохраняем в базу
+        file_database[unique_code] = file_id
+        
+        # Создаем ссылку
+        bot_username = context.bot.username
+        link = f"https://t.me/{bot_username}?start={unique_code}"
+        
+        # Создаем кнопку с ссылкой
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📎 Открыть фото", url=link)]
+        ])
+        
+        await update.message.reply_text(
+            f"✅ Фото сохранено!\n"
+            f"🔗 Ваша ссылка: `{link}`\n"
+            f"📎 Код: `{unique_code}`",
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при обработке фото: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при обработке фото")
+
+async def handle_start_with_code(update: Update, context: CallbackContext) -> None:
+    """Обработчик команды /start с кодом"""
+    args = context.args
+    if args:
+        code = args[0]
+        if code in file_database:
+            file_id = file_database[code]
             
-            # Отправляем приветствие
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=f"Привет, {user.first_name}! 🖐️\n\n"
-                     "✅ Спасибо за подписку!\n"
-                     "Добро пожаловать в наш бот! 🤖\n\n"
-                     "Теперь вы можете пользоваться всеми функциями бота!"
+            # Отправляем фото пользователю
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=file_id,
+                caption=f"📸 Фото по коду: {code}"
             )
         else:
-            # Пользователь все еще не подписан
-            await query.edit_message_text(
-                text=f"❌ {user.first_name}, вы еще не подписались на все каналы!\n\n"
-                     "Пожалуйста, убедитесь что вы подписались на:\n"
-                     "1. @steal_a_braiinrotai\n"
-                     "2. Второй канал\n\n"
-                     "После подписки нажмите кнопку проверки еще раз.",
-                reply_markup=query.message.reply_markup
-            )
+            await update.message.reply_text("❌ Фото не найдено или ссылка устарела")
+    else:
+        await start(update, context)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def help_command(update: Update, context: CallbackContext) -> None:
     """Обработчик команды /help"""
     await update.message.reply_text(
-        "Список команд:\n"
-        "/start - Начать работу с ботом\n"
-        "/help - Получить справку\n\n"
-        "Если возникли проблемы с проверкой подписки:\n"
-        "1. Убедитесь что подписались на оба канала\n"
-        "2. Нажмите кнопку '✅ Я подписался! Проверить'\n"
-        "3. Если не помогает, перезапустите бота командой /start"
+        "📸 **Как использовать бота:**\n\n"
+        "1. Просто отправьте мне любое фото\n"
+        "2. Я сохраню его и дам вам уникальную ссылку\n"
+        "3. Отправьте эту ссылку друзьям\n"
+        "4. При переходе по ссылке откроется это фото\n\n"
+        "🤖 Бот создан по примеру @MERIXTI_files_bot",
+        parse_mode='Markdown'
     )
 
 def main() -> None:
-    """Запуск бота"""
+    """Основная функция запуска бота"""
     # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
     
-    # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start))
+    # Регистрируем обработчики
+    application.add_handler(CommandHandler("start", handle_start_with_code))
     application.add_handler(CommandHandler("help", help_command))
-    
-    # Регистрируем обработчик callback-запросов
-    from telegram.ext import CallbackQueryHandler
-    application.add_handler(CallbackQueryHandler(check_subscription_callback))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # Запускаем бота
-    logger.info("Бот запущен...")
+    print("🤖 Бот запущен...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
