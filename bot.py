@@ -350,54 +350,164 @@ async def cmd_start(message: Message, state: FSMContext):
             try:
                 file_data = file_info['file_data']
                 
-                # Отправляем файл в зависимости от типа
+                # ОТПРАВЛЯЕМ ФАЙЛ С КНОПКОЙ КАК НА ФОТО
                 if file_info['file_type'] == 'document':
+                    # Кнопка как на фото
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_document(
                         chat_id=chat_id,
                         document=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'photo':
+                    # Кнопка как на фото
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_photo(
                         chat_id=chat_id,
                         photo=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'video':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_video(
                         chat_id=chat_id,
                         video=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'audio':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_audio(
                         chat_id=chat_id,
                         audio=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'voice':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_voice(
                         chat_id=chat_id,
-                        voice=file_data['file_id']
+                        voice=file_data['file_id'],
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'video_note':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_video_note(
                         chat_id=chat_id,
-                        video_note=file_data['file_id']
+                        video_note=file_data['file_id'],
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'animation':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_animation(
                         chat_id=chat_id,
                         animation=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'sticker':
+                    # Для стикеров сначала отправляем стикер, потом кнопку отдельно
                     await bot.send_sticker(
                         chat_id=chat_id,
                         sticker=file_data['file_id']
                     )
+                    
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
+                    await message.answer(
+                        "Ваш стикер",
+                        reply_markup=keyboard
+                    )
                 
-                # НЕ отправляем статистику, просто отправляем файл и всё
+                # НЕ отправляем статистику, просто отправляем файл с кнопкой и всё
                 
             except Exception as e:
                 logging.error(f"Ошибка при отправке файла: {e}")
@@ -478,51 +588,159 @@ async def check_and_get_callback(callback_query: CallbackQuery):
                 file_data = file_info['file_data']
                 chat_id = callback_query.message.chat.id
                 
-                # Отправляем файл в зависимости от типа
+                # Отправляем файл с кнопкой как на фото
                 if file_info['file_type'] == 'document':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_document(
                         chat_id=chat_id,
                         document=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'photo':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_photo(
                         chat_id=chat_id,
                         photo=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'video':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_video(
                         chat_id=chat_id,
                         video=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'audio':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_audio(
                         chat_id=chat_id,
                         audio=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'voice':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_voice(
                         chat_id=chat_id,
-                        voice=file_data['file_id']
+                        voice=file_data['file_id'],
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'video_note':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_video_note(
                         chat_id=chat_id,
-                        video_note=file_data['file_id']
+                        video_note=file_data['file_id'],
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'animation':
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
                     await bot.send_animation(
                         chat_id=chat_id,
                         animation=file_data['file_id'],
-                        caption=file_data.get('caption', '')
+                        caption=file_data.get('caption', ''),
+                        reply_markup=keyboard
                     )
+                    
                 elif file_info['file_type'] == 'sticker':
+                    # Для стикеров сначала отправляем стикер, потом кнопку
                     await bot.send_sticker(
                         chat_id=chat_id,
                         sticker=file_data['file_id']
+                    )
+                    
+                    keyboard = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [
+                                InlineKeyboardButton(
+                                    text="Наш канал 👾",
+                                    url="https://t.me/basegriefer"
+                                )
+                            ]
+                        ]
+                    )
+                    
+                    await callback_query.message.answer(
+                        "Ваш стикер",
+                        reply_markup=keyboard
                     )
                 
                 # НЕ отправляем сообщение об успехе
