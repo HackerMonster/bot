@@ -21,8 +21,8 @@ CHANNELS = [
 # ID чатов и каналов, где бот НЕ ДОЛЖЕН работать
 BLACKLIST_CHAT_IDS = [-1002197945807, -1001621247413]
 
-# ID группы с файлами (где будет работать функционал)
-FILE_STORAGE_CHAT_ID = 1003603301766
+# ID канала для загрузки файлов (замените на ваш)
+FILE_STORAGE_CHAT_ID = -1003285242946
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -142,16 +142,38 @@ async def delete_all_subscription_messages(chat_id: int):
         logging.error(f"Ошибка при удалении сообщений о подписке: {e}")
 
 # Функция для сохранения информации о файле
-def save_file_info(file_id, file_type, message_id, chat_id):
+def save_file_info(message: Message, file_type: str):
     unique_code = str(uuid.uuid4())[:12]
+    
+    # Сохраняем основную информацию о сообщении
     file_storage[unique_code] = {
-        'file_id': file_id,
+        'message_id': message.message_id,
+        'chat_id': message.chat.id,
         'file_type': file_type,
-        'message_id': message_id,
-        'chat_id': chat_id,
+        'caption': message.caption or "",
         'created_at': datetime.now(),
         'uses': 0
     }
+    
+    # Сохраняем file_id в зависимости от типа файла
+    if file_type == "document":
+        file_storage[unique_code]['file_id'] = message.document.file_id
+        file_storage[unique_code]['file_name'] = message.document.file_name
+    elif file_type == "photo":
+        file_storage[unique_code]['file_id'] = message.photo[-1].file_id
+    elif file_type == "video":
+        file_storage[unique_code]['file_id'] = message.video.file_id
+    elif file_type == "audio":
+        file_storage[unique_code]['file_id'] = message.audio.file_id
+    elif file_type == "voice":
+        file_storage[unique_code]['file_id'] = message.voice.file_id
+    elif file_type == "video_note":
+        file_storage[unique_code]['file_id'] = message.video_note.file_id
+    elif file_type == "animation":
+        file_storage[unique_code]['file_id'] = message.animation.file_id
+    elif file_type == "sticker":
+        file_storage[unique_code]['file_id'] = message.sticker.file_id
+    
     return unique_code
 
 # Функция для получения файла по коду
@@ -161,23 +183,33 @@ def get_file_by_code(code):
         return file_storage[code]
     return None
 
-# Обработчик загрузки файлов в группе 1003603301766
-@dp.message(lambda message: message.chat.id == FILE_STORAGE_CHAT_ID and (message.document or message.photo))
+# Обработчик загрузки ЛЮБЫХ файлов в канале -1003285242946
+@dp.message(lambda message: message.chat.id == FILE_STORAGE_CHAT_ID)
 async def handle_file_upload(message: Message):
-    file_id = None
     file_type = None
-    caption = message.caption or "Файл"
     
+    # Определяем тип контента
     if message.document:
-        file_id = message.document.file_id
         file_type = "document"
     elif message.photo:
-        file_id = message.photo[-1].file_id
         file_type = "photo"
+    elif message.video:
+        file_type = "video"
+    elif message.audio:
+        file_type = "audio"
+    elif message.voice:
+        file_type = "voice"
+    elif message.video_note:
+        file_type = "video_note"
+    elif message.animation:
+        file_type = "animation"
+    elif message.sticker:
+        file_type = "sticker"
     
-    if file_id:
+    # Если это файл (любой тип)
+    if file_type:
         # Создаем уникальный код
-        unique_code = save_file_info(file_id, file_type, message.message_id, message.chat.id)
+        unique_code = save_file_info(message, file_type)
         
         # Создаем ссылку
         bot_username = (await bot.get_me()).username
@@ -255,19 +287,51 @@ async def cmd_start(message: Message, state: FSMContext):
         file_info = get_file_by_code(code)
         if file_info:
             try:
+                # Отправляем файл в зависимости от типа
                 if file_info['file_type'] == 'document':
-                    await bot.copy_message(
+                    await bot.send_document(
                         chat_id=chat_id,
-                        from_chat_id=file_info['chat_id'],
-                        message_id=file_info['message_id']
+                        document=file_info['file_id'],
+                        caption=file_info['caption']
                     )
                 elif file_info['file_type'] == 'photo':
                     await bot.send_photo(
                         chat_id=chat_id,
                         photo=file_info['file_id'],
-                        caption=f"📸 Фото из канала\n\n"
-                               f"🔗 Получено по ссылке\n"
-                               f"📊 Использовано раз: {file_info['uses']}"
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'video':
+                    await bot.send_video(
+                        chat_id=chat_id,
+                        video=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'audio':
+                    await bot.send_audio(
+                        chat_id=chat_id,
+                        audio=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'voice':
+                    await bot.send_voice(
+                        chat_id=chat_id,
+                        voice=file_info['file_id']
+                    )
+                elif file_info['file_type'] == 'video_note':
+                    await bot.send_video_note(
+                        chat_id=chat_id,
+                        video_note=file_info['file_id']
+                    )
+                elif file_info['file_type'] == 'animation':
+                    await bot.send_animation(
+                        chat_id=chat_id,
+                        animation=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'sticker':
+                    await bot.send_sticker(
+                        chat_id=chat_id,
+                        sticker=file_info['file_id']
                     )
                 
                 # Показываем статистику
@@ -276,7 +340,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     f"📊 Статистика:\n"
                     f"• Использовано раз: {file_info['uses']}\n"
                     f"• Дата создания: {file_info['created_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
-                    f"🔗 Для нового файла загрузите его в группу"
+                    f"🔗 Для нового файла загрузите его в канал"
                 )
                 
                 keyboard = InlineKeyboardMarkup(
@@ -298,18 +362,19 @@ async def cmd_start(message: Message, state: FSMContext):
             await message.answer("❌ Файл не найден или ссылка устарела.")
         return
     
-    # Стандартная команда /start без параметра
+    # Стандартная команда /start без параметра - ВОЗВРАЩАЕМ СТАРОЕ ПРИВЕТСТВИЕ
     subscription_status = await check_user_subscription(user_id)
     
     if subscription_status["subscribed_count"] == subscription_status["total_count"]:
         await delete_all_subscription_messages(chat_id)
         
-        welcome_text = "👋 Привет, я храню файлы с канала BaseGriefer!\n\n📁 Загрузите файл в группу, чтобы получить ссылку."
+        # СТАРОЕ ПРИВЕТСТВИЕ
+        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="👾 Наш Канал", 
+                        text="Наш канал 🌟", 
                         url="https://t.me/basegriefer"
                     )
                 ]
@@ -344,17 +409,53 @@ async def check_and_get_callback(callback_query: CallbackQuery):
         file_info = get_file_by_code(code)
         if file_info:
             try:
+                # Отправляем файл в зависимости от типа
+                chat_id = callback_query.message.chat.id
+                
                 if file_info['file_type'] == 'document':
-                    await bot.copy_message(
-                        chat_id=callback_query.message.chat.id,
-                        from_chat_id=file_info['chat_id'],
-                        message_id=file_info['message_id']
+                    await bot.send_document(
+                        chat_id=chat_id,
+                        document=file_info['file_id'],
+                        caption=file_info['caption']
                     )
                 elif file_info['file_type'] == 'photo':
                     await bot.send_photo(
-                        chat_id=callback_query.message.chat.id,
+                        chat_id=chat_id,
                         photo=file_info['file_id'],
-                        caption=f"📸 Фото из канала"
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'video':
+                    await bot.send_video(
+                        chat_id=chat_id,
+                        video=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'audio':
+                    await bot.send_audio(
+                        chat_id=chat_id,
+                        audio=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'voice':
+                    await bot.send_voice(
+                        chat_id=chat_id,
+                        voice=file_info['file_id']
+                    )
+                elif file_info['file_type'] == 'video_note':
+                    await bot.send_video_note(
+                        chat_id=chat_id,
+                        video_note=file_info['file_id']
+                    )
+                elif file_info['file_type'] == 'animation':
+                    await bot.send_animation(
+                        chat_id=chat_id,
+                        animation=file_info['file_id'],
+                        caption=file_info['caption']
+                    )
+                elif file_info['file_type'] == 'sticker':
+                    await bot.send_sticker(
+                        chat_id=chat_id,
+                        sticker=file_info['file_id']
                     )
                 
                 await callback_query.message.answer("✅ Файл успешно отправлен!")
@@ -379,12 +480,13 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
             "✅ Вы успешно подписались на все каналы! Теперь вы можете пользоваться ботом."
         )
         
-        welcome_text = "👋 Привет, я храню файлы с канала BaseGriefer!\n\n📁 Загрузите файл в группу, чтобы получить ссылку."
+        # СТАРОЕ ПРИВЕТСТВИЕ
+        welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="👾 Наш Канал", 
+                        text="Наш канал 🌟", 
                         url="https://t.me/basegriefer"
                     )
                 ]
