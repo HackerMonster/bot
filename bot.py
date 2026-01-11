@@ -8,7 +8,6 @@ from aiogram.fsm.state import State, StatesGroup
 import asyncio
 import uuid
 from datetime import datetime
-import pyperclip
 
 # Токен бота
 API_TOKEN = '8323926582:AAF0Nzg0HdhF0_4WrlaOonBA4bLokSJxWWU'
@@ -109,26 +108,6 @@ def create_subscription_keyboard_only():
                 InlineKeyboardButton(
                     text="✅ Проверить подписку",
                     callback_data="check_subscription_main"
-                )
-            ]
-        ]
-    )
-    return keyboard
-
-# Функция для создания клавиатуры с кнопкой копирования ссылки
-def create_copy_link_keyboard(link: str):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔗 Копировать ссылку",
-                    callback_data=f"copy_link_{link}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👾 Наш Канал",
-                    url="https://t.me/basegriefer"
                 )
             ]
         ]
@@ -293,16 +272,26 @@ async def handle_file_upload(message: Message, state: FSMContext):
         bot_username = (await bot.get_me()).username
         link = f"https://t.me/{bot_username}?start={unique_code}"
         
-        # Создаем клавиатуру с кнопкой копирования
-        keyboard = create_copy_link_keyboard(link)
+        # Создаем клавиатуру только с кнопкой канала
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="👾 Наш Канал",
+                        url="https://t.me/basegriefer"
+                    )
+                ]
+            ]
+        )
         
-        # Отправляем сообщение о успешной загрузке
+        # Отправляем сообщение о успешной загрузке со ссылкой в тексте
         await message.answer(
-            f"✅ Файл успешно загружен!\n\n"
-            f"🔗 Уникальная ссылка:\n`{link}`\n\n"
-            f"📊 Нажмите на кнопку ниже, чтобы скопировать ссылку.",
+            f"<b>Файл успешно загружен ❗</b>\n\n"
+            f"<b>Ссылка 👇</b>\n"
+            f"<code>{link}</code>\n\n"
+            f"ℹ️ Нажмите на ссылку выше, чтобы скопировать её",
             reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
         
         # Сбрасываем состояние
@@ -501,32 +490,6 @@ async def cmd_start(message: Message, state: FSMContext):
         sent_message = await message.answer(warning_text, reply_markup=keyboard)
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(FileUploadStates.waiting_for_subscription)
-
-# Обработчик для кнопки "Копировать ссылку"
-@dp.callback_query(lambda c: c.data.startswith("copy_link_"))
-async def copy_link_callback(callback_query: CallbackQuery):
-    # Извлекаем ссылку из callback_data
-    link = callback_query.data.replace("copy_link_", "")
-    
-    try:
-        # Копируем ссылку в буфер обмена
-        pyperclip.copy(link)
-        
-        # Отправляем подтверждение
-        await callback_query.answer("✅ Ссылка скопирована в буфер обмена!", show_alert=True)
-        
-        # Показываем ссылку еще раз
-        await callback_query.message.edit_text(
-            f"✅ Файл успешно загружен!\n\n"
-            f"🔗 Уникальная ссылка (скопирована):\n`{link}`\n\n"
-            f"📊 Ссылка скопирована! Теперь вы можете поделиться ею.",
-            reply_markup=callback_query.message.reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-    except Exception as e:
-        logging.error(f"Ошибка при копировании ссылки: {e}")
-        await callback_query.answer("❌ Не удалось скопировать ссылку", show_alert=True)
 
 # Обработчик для кнопки "Проверить подписку" (основная)
 @dp.callback_query(lambda c: c.data == "check_subscription_main")
