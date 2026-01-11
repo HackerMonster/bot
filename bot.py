@@ -21,8 +21,8 @@ CHANNELS = [
 # ID чатов и каналов, где бот НЕ ДОЛЖЕН работать
 BLACKLIST_CHAT_IDS = [-1002197945807, -1001621247413]
 
-# ID канала для загрузки файлов (замените на ваш)
-FILE_STORAGE_CHAT_ID = -1003285242946
+# ID канала для загрузки файлов (ССЫЛКА НА КАНАЛ ВАША: https://t.me/+PI0G1whs_AJjNzdi)
+FILE_STORAGE_CHAT_ID = -1003285242946  # Убедитесь, что это правильный ID канала!
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -146,7 +146,7 @@ def save_file_info(message: Message, file_type: str):
     unique_code = str(uuid.uuid4())[:12]
     
     # Сохраняем основную информацию о сообщении
-    file_storage[unique_code] = {
+    file_data = {
         'message_id': message.message_id,
         'chat_id': message.chat.id,
         'file_type': file_type,
@@ -157,23 +157,26 @@ def save_file_info(message: Message, file_type: str):
     
     # Сохраняем file_id в зависимости от типа файла
     if file_type == "document":
-        file_storage[unique_code]['file_id'] = message.document.file_id
-        file_storage[unique_code]['file_name'] = message.document.file_name
+        file_data['file_id'] = message.document.file_id
+        file_data['file_name'] = message.document.file_name
     elif file_type == "photo":
-        file_storage[unique_code]['file_id'] = message.photo[-1].file_id
+        file_data['file_id'] = message.photo[-1].file_id
     elif file_type == "video":
-        file_storage[unique_code]['file_id'] = message.video.file_id
+        file_data['file_id'] = message.video.file_id
     elif file_type == "audio":
-        file_storage[unique_code]['file_id'] = message.audio.file_id
+        file_data['file_id'] = message.audio.file_id
+        file_data['file_name'] = message.audio.file_name or "Аудио файл"
     elif file_type == "voice":
-        file_storage[unique_code]['file_id'] = message.voice.file_id
+        file_data['file_id'] = message.voice.file_id
     elif file_type == "video_note":
-        file_storage[unique_code]['file_id'] = message.video_note.file_id
+        file_data['file_id'] = message.video_note.file_id
     elif file_type == "animation":
-        file_storage[unique_code]['file_id'] = message.animation.file_id
+        file_data['file_id'] = message.animation.file_id
     elif file_type == "sticker":
-        file_storage[unique_code]['file_id'] = message.sticker.file_id
+        file_data['file_id'] = message.sticker.file_id
     
+    file_storage[unique_code] = file_data
+    logging.info(f"Файл сохранен с кодом: {unique_code}, тип: {file_type}")
     return unique_code
 
 # Функция для получения файла по коду
@@ -208,6 +211,8 @@ async def handle_file_upload(message: Message):
     
     # Если это файл (любой тип)
     if file_type:
+        logging.info(f"Получен файл типа {file_type} в канале {message.chat.id}")
+        
         # Создаем уникальный код
         unique_code = save_file_info(message, file_type)
         
@@ -234,13 +239,30 @@ async def handle_file_upload(message: Message):
         )
         
         # Отправляем сообщение с кнопкой
-        await message.reply(
-            f"📁 Файл сохранен!\n\n"
-            f"🔗 Ссылка для получения: `{link}`\n\n"
-            f"ℹ️ Нажмите кнопку ниже, чтобы перейти к боту",
-            reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN
-        )
+        try:
+            await message.reply(
+                f"📁 Файл сохранен!\n\n"
+                f"🔗 Ссылка для получения: `{link}`\n\n"
+                f"ℹ️ Нажмите кнопку ниже, чтобы перейти к боту",
+                reply_markup=keyboard,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            logging.info(f"Отправлено сообщение с кнопкой для файла {unique_code}")
+        except Exception as e:
+            logging.error(f"Ошибка при отправке сообщения: {e}")
+            # Пробуем отправить без reply
+            try:
+                await bot.send_message(
+                    chat_id=message.chat.id,
+                    text=f"📁 Файл сохранен!\n\n🔗 Ссылка: `{link}`",
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e2:
+                logging.error(f"Не удалось отправить сообщение: {e2}")
+    else:
+        # Если это не файл, но сообщение в канале
+        logging.info(f"Получено текстовое сообщение в канале: {message.text}")
 
 # Обработчик команды /start с параметром
 @dp.message(Command("start"))
@@ -248,9 +270,12 @@ async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
+    logging.info(f"Команда /start от пользователя {user_id}, текст: {message.text}")
+    
     # Проверяем, есть ли параметр в команде start
     if len(message.text.split()) > 1:
         code = message.text.split()[1]
+        logging.info(f"Пользователь перешел по ссылке с кодом: {code}")
         
         # Проверяем подписку перед выдачей файла
         subscription_status = await check_user_subscription(user_id)
@@ -286,6 +311,7 @@ async def cmd_start(message: Message, state: FSMContext):
         # Если подписан - отправляем файл
         file_info = get_file_by_code(code)
         if file_info:
+            logging.info(f"Найден файл с кодом {code}, тип: {file_info['file_type']}")
             try:
                 # Отправляем файл в зависимости от типа
                 if file_info['file_type'] == 'document':
@@ -357,6 +383,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 await message.answer(stats_text, reply_markup=keyboard)
                 
             except Exception as e:
+                logging.error(f"Ошибка при отправке файла: {e}")
                 await message.answer(f"❌ Ошибка при отправке файла: {str(e)}")
         else:
             await message.answer("❌ Файл не найден или ссылка устарела.")
@@ -548,6 +575,10 @@ async def blacklist_middleware(handler, event: types.Update, data: dict):
 # Проверка подписки для всех сообщений
 @dp.message()
 async def handle_all_messages(message: Message, state: FSMContext):
+    # Пропускаем сообщения из канала с файлами
+    if message.chat.id == FILE_STORAGE_CHAT_ID:
+        return
+    
     current_state = await state.get_state()
     if current_state == SubscriptionStates.waiting_for_subscription.state:
         return
@@ -570,8 +601,39 @@ async def handle_all_messages(message: Message, state: FSMContext):
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(SubscriptionStates.waiting_for_subscription)
 
+# Функция для проверки правильности ID канала
+async def verify_channel_id():
+    try:
+        # Пробуем получить информацию о канале
+        chat = await bot.get_chat(FILE_STORAGE_CHAT_ID)
+        logging.info(f"Канал найден: {chat.title} (ID: {chat.id})")
+        
+        # Проверяем права бота в канале
+        try:
+            member = await bot.get_chat_member(chat.id, (await bot.get_me()).id)
+            logging.info(f"Статус бота в канале: {member.status}")
+            return True
+        except Exception as e:
+            logging.error(f"Бот не является участником канала: {e}")
+            return False
+    except Exception as e:
+        logging.error(f"Не удалось получить информацию о канале {FILE_STORAGE_CHAT_ID}: {e}")
+        return False
+
 # Основная функция
 async def main():
+    # Проверяем канал перед запуском
+    logging.info("Проверяем доступ к каналу...")
+    channel_ok = await verify_channel_id()
+    if not channel_ok:
+        logging.error("Проблема с доступом к каналу! Проверьте:")
+        logging.error(f"1. Правильность ID канала: {FILE_STORAGE_CHAT_ID}")
+        logging.error(f"2. Бот добавлен в канал как администратор")
+        logging.error(f"3. Ссылка на канал: https://t.me/+PI0G1whs_AJjNzdi")
+    else:
+        logging.info("Канал проверен успешно!")
+    
+    # Запускаем бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
