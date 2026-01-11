@@ -1,7 +1,7 @@
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 import asyncio
 
@@ -17,25 +17,21 @@ dp = Dispatcher()
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    # Формируем приветственное сообщение с форматированием
-    welcome_text = (
-        "┌─────────────────────\n"
-        "│  👋 ПРИВЕТСТВУЕМ!\n"
-        "│  Добро пожаловать в лучший\n"
-        "│  источник контента для Minecraft!\n"
-        "└─────────────────────\n\n"
-        "📥 ОСНОВНАЯ ФУНКЦИЯ:\n"
-        "│\n"
-        "├─ ✅ Бесплатные моды и файлы\n"
-        "├─ ✅ Огромная библиотека\n"
-        "├─ ✅ Расширенный функционал\n"
-        "│\n"
-        "└─ 😏 ДЛЯ ЧЕГО ЭТО?\n"
-        "┌─ 🎯 Для работы: Проекты\n"
-        "└─ 🎮 Для веселья: Открывай новые способы игры!"
+    # Создаем инлайн-кнопку
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Наш канал 🌟", 
+                    url="https://t.me/basegriefer"
+                )
+            ]
+        ]
     )
     
-    await message.answer(welcome_text, parse_mode=ParseMode.MARKDOWN)
+    welcome_text = "👋 Привет, я храню файлы с канала Dima Griefer!"
+    
+    await message.answer(welcome_text, reply_markup=keyboard)
 
 # Основная функция
 async def main():
