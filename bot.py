@@ -95,13 +95,13 @@ def create_subscription_keyboard():
             [
                 InlineKeyboardButton(
                     text="1️⃣ Подписаться", 
-                    url=CHANNELS[0]["url"]
+                    url="https://t.me/basegriefer"
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="2️⃣ Подписаться", 
-                    url=CHANNELS[1]["url"]
+                    url="https://t.me/chatbasegriefer"
                 )
             ],
             [
@@ -144,7 +144,7 @@ async def delete_all_subscription_messages(chat_id: int):
         async for msg in bot.get_chat_history(chat_id, limit=50):
             if msg.from_user and msg.from_user.id == bot.id:
                 if msg.text and any(keyword in msg.text for keyword in [
-                    "Прежде чем пользоваться ботом",
+                    "❗ | Прежде чем пользоваться ботом",
                     "Подпишитесь на все каналы",
                     "✅ Вы успешно подписались",
                     "❌ Подтверждено:",
@@ -272,32 +272,22 @@ async def handle_file_upload(message: Message, state: FSMContext):
         bot_username = (await bot.get_me()).username
         link = f"https://t.me/{bot_username}?start={unique_code}"
         
-        # Создаем кнопку
+        # Создаем кнопку с ссылкой на канал
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="👾 Наш Канал",
+                        text="👾 Наш Канал - https://t.me/basegriefer",
                         url="https://t.me/basegriefer"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📥 Получить файл",
-                        url=link
                     )
                 ]
             ]
         )
         
-        # Отправляем сообщение с результатом
+        # Отправляем сообщение с автотекстом
         await message.answer(
-            f"✅ Файл успешно добавлен в базу!\n\n"
-            f"🔗 Ссылка для получения: `{link}`\n\n"
-            f"📊 Статистика:\n"
-            f"• Тип файла: {file_type}\n"
-            f"• Уникальный код: `{unique_code}`\n\n"
-            f"ℹ️ Поделитесь ссылкой с другими пользователями",
+            f"Вот файл 📁\n\n"
+            f"🔗 Ссылка: `{link}`",
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN
         )
@@ -328,9 +318,9 @@ async def cmd_start(message: Message, state: FSMContext):
         if subscription_status["subscribed_count"] < subscription_status["total_count"]:
             # Пользователь не подписан
             warning_text = (
-                "❗ | Для получения файла подпишитесь на каналы!\n\n"
+                "⚠️ Подпишитесь на все каналы.\n"
                 f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-                "❗ После подписки проверьте еще раз."
+                "❗ Нажмите по кнопкам выше, затем проверьте подписку."
             )
             
             keyboard = InlineKeyboardMarkup(
@@ -407,27 +397,7 @@ async def cmd_start(message: Message, state: FSMContext):
                         sticker=file_data['file_id']
                     )
                 
-                # Показываем статистику
-                stats_text = (
-                    f"✅ Файл успешно отправлен!\n\n"
-                    f"📊 Статистика:\n"
-                    f"• Использовано раз: {file_info['uses']}\n"
-                    f"• Дата создания: {file_info['created_at'].strftime('%Y-%m-%d %H:%M')}\n\n"
-                    f"🔗 Для нового файла используйте команду /addfile"
-                )
-                
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="👾 Наш Канал",
-                                url="https://t.me/basegriefer"
-                            )
-                        ]
-                    ]
-                )
-                
-                await message.answer(stats_text, reply_markup=keyboard)
+                # НЕ отправляем статистику, просто отправляем файл и всё
                 
             except Exception as e:
                 logging.error(f"Ошибка при отправке файла: {e}")
@@ -458,13 +428,35 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         await delete_all_subscription_messages(chat_id)
         
+        # ОБНОВЛЕННЫЙ ТЕКСТ С КНОПКАМИ
         warning_text = (
-            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!\n\n"
-            f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-            "❗ Нажмите по кнопкам выше, затем проверьте подписку."
+            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
         )
         
-        sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        url="https://t.me/basegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        url="https://t.me/chatbasegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="✅ Проверить подписку",
+                        callback_data="check_subscription"
+                    )
+                ]
+            ]
+        )
+        
+        sent_message = await message.answer(warning_text, reply_markup=keyboard)
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(FileUploadStates.waiting_for_subscription)
 
@@ -533,12 +525,43 @@ async def check_and_get_callback(callback_query: CallbackQuery):
                         sticker=file_data['file_id']
                     )
                 
-                await callback_query.message.answer("✅ Файл успешно отправлен!")
+                # НЕ отправляем сообщение об успехе
                 
             except Exception as e:
                 await callback_query.message.answer(f"❌ Ошибка при отправке файла: {str(e)}")
     else:
-        await callback_query.answer("❌ Вы все еще не подписаны на все каналы!", show_alert=True)
+        # ОБНОВЛЕННЫЙ ТЕКСТ ПРИ НЕПОДПИСКЕ
+        warning_text = (
+            f"⚠️ Подпишитесь на все каналы.\n"
+            f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
+            "❗ Нажмите по кнопкам выше, затем проверьте подписку."
+        )
+        
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        url="https://t.me/basegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        url="https://t.me/chatbasegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="✅ Проверить подписку",
+                        callback_data=f"check_and_get_{code}"
+                    )
+                ]
+            ]
+        )
+        
+        await callback_query.message.edit_text(warning_text, reply_markup=keyboard)
+        await callback_query.answer()
 
 # Обработчик нажатия кнопки проверки подписки
 @dp.callback_query(lambda c: c.data == "check_subscription")
@@ -579,13 +602,37 @@ async def check_subscription_callback(callback_query: CallbackQuery, state: FSMC
     else:
         await delete_all_subscription_messages(chat_id)
         
+        # ОБНОВЛЕННЫЙ ТЕКСТ ПРИ НЕПОДПИСКЕ
         warning_text = (
             f"⚠️ Подпишитесь на все каналы.\n"
             f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
             "❗ Нажмите по кнопкам выше, затем проверьте подписку."
         )
         
-        await callback_query.message.answer(warning_text, reply_markup=create_subscription_keyboard())
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        url="https://t.me/basegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        url="https://t.me/chatbasegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="✅ Проверить подписку",
+                        callback_data="check_subscription"
+                    )
+                ]
+            ]
+        )
+        
+        await callback_query.message.answer(warning_text, reply_markup=keyboard)
         
         try:
             await callback_query.message.delete()
@@ -640,13 +687,35 @@ async def handle_all_messages(message: Message, state: FSMContext):
     if subscription_status["subscribed_count"] < subscription_status["total_count"]:
         await delete_all_subscription_messages(chat_id)
         
+        # ОБНОВЛЕННЫЙ ТЕКСТ С КНОПКАМИ
         warning_text = (
-            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!\n\n"
-            f"❌ Подтверждено: {subscription_status['subscribed_count']} из {subscription_status['total_count']}.\n\n"
-            "❗ Нажмите по кнопкам выше, затем проверьте подписку."
+            "❗ | Прежде чем пользоваться ботом, подпишись на указанные каналы ниже!"
         )
         
-        sent_message = await message.answer(warning_text, reply_markup=create_subscription_keyboard())
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="1️⃣ Подписаться — https://t.me/basegriefer", 
+                        url="https://t.me/basegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="2️⃣ Подписаться - https://t.me/chatbasegriefer", 
+                        url="https://t.me/chatbasegriefer"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="✅ Проверить подписку",
+                        callback_data="check_subscription"
+                    )
+                ]
+            ]
+        )
+        
+        sent_message = await message.answer(warning_text, reply_markup=keyboard)
         await state.update_data(last_subscription_message_id=sent_message.message_id)
         await state.set_state(FileUploadStates.waiting_for_subscription)
 
